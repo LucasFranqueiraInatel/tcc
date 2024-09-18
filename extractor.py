@@ -37,7 +37,6 @@ class Extractor:
         except Exception as e:
             return f"Erro ao verificar se COMMENT é o primeiro da conversa: {e}"
 
-
     def is_comment_empty(self, comment_html):
         # Verifica se o comentário está vazio
         if comment_html is None:
@@ -54,7 +53,6 @@ class Extractor:
 
     def is_teams_message(self, comment_html):
         # Verifica se o comentário é uma mensagem do Teams
-
         try:
             soup = BeautifulSoup(comment_html, 'html.parser')
             comment_text = soup.get_text()
@@ -66,7 +64,6 @@ class Extractor:
 
     def is_automatic_serviceDesk_response(self, comment_html):
         # Verifica se o comentário contém o texto da resposta automática
-
         try:
             soup = BeautifulSoup(comment_html, 'html.parser')
             comment_text = soup.get_text()
@@ -77,18 +74,22 @@ class Extractor:
             return f"Erro ao verificar automatic_serviceDesk_response: {e}"
 
     def extract_data(self):
-        keys_to_remove = ['COMMENT_LOC', 'DESCRIPTION', 'OWNERS_ONLY_DESCRIPTION', 'LOCALIZED_DESCRIPTION', 'LOCALIZED_OWNERS_ONLY_DESCRIPTION', 'MAILED', 'MAILED_TIMESTAMP', 'MAILER_SESSION', 'NOTIFY_USERS', 'VIA_EMAIL', 'OWNERS_ONLY', 'RESOLUTION_CHANGED', 'SYSTEM_COMMENT', 'TICKET_DATA_CHANGE', 'VIA_SCHEDULED_PROCESS', 'VIA_IMPORT', 'VIA_BULK_UPDATE']  # Substitua pelas chaves que deseja remover
+        keys_to_remove = ['COMMENT_LOC', 'DESCRIPTION', 'OWNERS_ONLY_DESCRIPTION', 'LOCALIZED_DESCRIPTION', 'LOCALIZED_OWNERS_ONLY_DESCRIPTION', 'MAILED', 'MAILED_TIMESTAMP', 'MAILER_SESSION', 'NOTIFY_USERS', 'VIA_EMAIL', 'OWNERS_ONLY', 'RESOLUTION_CHANGED', 'SYSTEM_COMMENT', 'TICKET_DATA_CHANGE', 'VIA_SCHEDULED_PROCESS', 'VIA_IMPORT', 'VIA_BULK_UPDATE']
 
         for item in self.original_data:
             if isinstance(item, dict):
                 if 'COMMENT' in item and 'HD_TICKET_ID' in item:
                     comment_html = item['COMMENT']
+                    
+                    # Limpa o HTML do COMMENT
+                    clean_comment = self.extract_comment_text(comment_html)
+                    item['COMMENT'] = clean_comment
 
-                    if self.is_comment_empty(comment_html) or self.is_automatic_serviceDesk_response(comment_html) or self.is_teams_message(comment_html) or self.isnt_first_message(item['HD_TICKET_ID']):
+                    if self.is_comment_empty(clean_comment) or self.is_automatic_serviceDesk_response(clean_comment) or self.is_teams_message(clean_comment) or self.isnt_first_message(item['HD_TICKET_ID']):
                         self.discarded_data.append(item)
                     else:
                         for key in keys_to_remove:
-                            item.pop(key, None)  # Remove a chave se existir, caso contrário, ignora
+                            item.pop(key, None)
                         self.filtered_data.append(item)
                 else:
                     self.filtered_data.append(item)

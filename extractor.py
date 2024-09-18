@@ -8,6 +8,7 @@ class Extractor:
         self.original_data = self.load_data()
         self.filtered_data = []
         self.discarded_data = []
+        self.useds_ids = []
 
     def load_data(self):
         # Carrega os dados do arquivo JSON
@@ -17,18 +18,30 @@ class Extractor:
     def extract_comment_text(self, comment_html):
         # Extrai o texto do HTML de comentários
         if comment_html is None:
-            return ''  # Retorna string vazia se o comentário for None
+            return ''
 
         try:
             soup = BeautifulSoup(comment_html, 'html.parser')
             return soup.get_text()
         except Exception as e:
             return f"Erro ao extrair texto de COMMENT: {e}"
+        
+    def isnt_first_message(self, id):
+        # Verifica se o comentário é o primeiro da conversa
+        try:
+            if id in self.useds_ids:
+                return True
+            else:
+                self.useds_ids.append(id)
+                return False
+        except Exception as e:
+            return f"Erro ao verificar se COMMENT é o primeiro da conversa: {e}"
+
 
     def is_comment_empty(self, comment_html):
         # Verifica se o comentário está vazio
         if comment_html is None:
-            return True  # Trata o None diretamente
+            return True 
 
         try:
             soup = BeautifulSoup(comment_html, 'html.parser')
@@ -45,7 +58,7 @@ class Extractor:
         try:
             soup = BeautifulSoup(comment_html, 'html.parser')
             comment_text = soup.get_text()
-            if 'Prezado, boa noite<br />Você foi adicionado nas seguintes turmas:<br /><strong>' in comment_text:
+            if 'Você foi adicionado nas seguintes turmas' in comment_text:
                 return True
             return False
         except Exception as e:
@@ -64,20 +77,23 @@ class Extractor:
             return f"Erro ao verificar automatic_serviceDesk_response: {e}"
 
     def extract_data(self):
+        keys_to_remove = ['COMMENT_LOC', 'DESCRIPTION', 'OWNERS_ONLY_DESCRIPTION', 'LOCALIZED_DESCRIPTION', 'LOCALIZED_OWNERS_ONLY_DESCRIPTION', 'MAILED', 'MAILED_TIMESTAMP', 'MAILER_SESSION', 'NOTIFY_USERS', 'VIA_EMAIL', 'OWNERS_ONLY', 'RESOLUTION_CHANGED', 'SYSTEM_COMMENT', 'TICKET_DATA_CHANGE', 'VIA_SCHEDULED_PROCESS', 'VIA_IMPORT', 'VIA_BULK_UPDATE']  # Substitua pelas chaves que deseja remover
+
         for item in self.original_data:
             if isinstance(item, dict):
-                if 'COMMENT' in item:
+                if 'COMMENT' in item and 'HD_TICKET_ID' in item:
                     comment_html = item['COMMENT']
 
-                    if self.is_comment_empty(comment_html) or self.is_automatic_serviceDesk_response(comment_html) or self.is_teams_message(comment_html):
+                    if self.is_comment_empty(comment_html) or self.is_automatic_serviceDesk_response(comment_html) or self.is_teams_message(comment_html) or self.isnt_first_message(item['HD_TICKET_ID']):
                         self.discarded_data.append(item)
                     else:
+                        for key in keys_to_remove:
+                            item.pop(key, None)  # Remove a chave se existir, caso contrário, ignora
                         self.filtered_data.append(item)
                 else:
                     self.filtered_data.append(item)
             else:
                 print("Item não é um dicionário.")
-            # Certifique-se de que as aspas estão corretas
             print(f"Item {item['ID']}: processado.")
 
     def save_filtered_data(self, output_path):
@@ -91,9 +107,8 @@ class Extractor:
 
 # Exemplo de uso
 teste = Extractor('data.json')
-teste.extract_data()  # Extrai os dados filtrados
+teste.extract_data()
 
-# Salva os dados filtrados e os descartados em arquivos separados
 teste.save_filtered_data('filtered_data.json')
 teste.save_discarded_data('discarded_data.json')
 

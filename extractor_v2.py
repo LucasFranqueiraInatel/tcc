@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from bs4 import BeautifulSoup
 import time
+import re
 
 class Extractor_v2:
 
@@ -9,14 +10,14 @@ class Extractor_v2:
         self.data = self.load_data(path)
 
     def load_data(self, path):
-        return pd.read_json(path)  # Corrigido: agora retorna o DataFrame
+        return pd.read_json(path)
 
     def order_by_HD_TICKET(self):
         self.data = self.data.sort_values(by=["HD_TICKET_ID", "TIMESTAMP"])
 
     def drop_columns(self):
         self.data = self.data.drop(
-            columns=['COMMENT_LOC', 'OWNERS_ONLY_DESCRIPTION', 'LOCALIZED_DESCRIPTION',
+            columns=['COMMENT_LOC', 'LOCALIZED_DESCRIPTION',
                      'LOCALIZED_OWNERS_ONLY_DESCRIPTION', 'MAILED', 'MAILED_TIMESTAMP', 'MAILER_SESSION',
                      'NOTIFY_USERS', 'VIA_EMAIL', 'OWNERS_ONLY', 'RESOLUTION_CHANGED', 'SYSTEM_COMMENT',
                      'TICKET_DATA_CHANGE', 'VIA_SCHEDULED_PROCESS', 'VIA_IMPORT', 'VIA_BULK_UPDATE'])
@@ -53,7 +54,7 @@ class Extractor_v2:
                                'Esta é uma resposta automática do sistema de ServiceDesk',
                                'Este chamado foi encerrado automaticamente',
                                'Sua solicitação será avaliada pela equipe responsável. Em breve você receberá um retorno']
-        # Prevenindo o erro ao substituir NaN por string vazia
+
         self.data = self.data[~self.data['COMMENT'].str.contains('|'.join(automatic_responses))].dropna()
 
     def drop_teams_messages(self):
@@ -66,6 +67,67 @@ class Extractor_v2:
         self.drop_automatic_responses()
         self.drop_teams_messages()
 
+    def clean_description(self, description):
+        """Remove quebras de linha e espaços extras da descrição."""
+        return description.replace('\\n', '').strip()
+
+    def find_match_in_description(self, description, patterns):
+        """
+        Verifica a descrição contra uma lista de padrões regex.
+        Retorna o valor encontrado na primeira correspondência.
+        """
+        for pattern in patterns:
+            match = re.search(pattern, description)
+            if match:
+                # Aqui você pode customizar o que retornar dependendo do regex.
+                # Por exemplo, para o primeiro regex retorna o segundo grupo (nova fila).
+                if "Changed tíquete Fila" in pattern:
+                    return match.group(2)
+                else:
+                    return match.group(0)  # Ou ajuste conforme o padrão
+        return None
+
+    def generate_target(self):
+        # Ordenar os dados por 'HD_TICKET_ID' e 'TIMESTAMP'
+        self.order_by_HD_TICKET()
+
+        # Capturar tickets únicos
+        unique_tickets = self.data['HD_TICKET_ID'].unique()
+
+        # Lista de regex que deseja verificar
+        regex_patterns = [
+            'Changed tíquete Fila from (.+?) to (.+?)\.',
+            'Changed ticket Queue from (.+?) to (.+?)\.',
+        ]
+
+        # Iterar sobre cada ticket
+        for ticket_id in unique_tickets:
+            # Filtrar as linhas correspondentes ao ticket atual
+            ticket_data = self.data[self.data['HD_TICKET_ID'] == ticket_id]
+
+            # Variável para armazenar o resultado encontrado
+            target_value = None
+
+            # Procurar uma correspondência em cada descrição do ticket
+            for index, row in ticket_data.iterrows():
+                if isinstance(row['DESCRIPTION'], str):
+                    cleaned_description = self.clean_description(row['DESCRIPTION'])
+
+                    # Procurar correspondência nos regex
+                    target_value = self.find_match_in_description(cleaned_description, regex_patterns)
+
+                    # Se encontramos uma correspondência, interrompemos o loop
+                    if target_value:
+                        break
+
+            # Se encontramos uma mudança, aplicar ao primeiro comentário do ticket
+            if target_value:
+                first_index = ticket_data.index[0]
+                self.data.at[first_index, 'TARGET'] = target_value
+            else:
+                # Se não encontramos, preencher com NaN
+                first_index = ticket_data.index[0]
+                self.data.at[first_index, 'TARGET'] = '1°Nível to SRI'
 
 
 
@@ -78,9 +140,9 @@ start_time = time.time()
 extractor.order_by_HD_TICKET()
 print(f"Ordenação por HD_TICKET concluída em {time.time() - start_time:.2f} segundos")
 
-# start_time = time.time()
-# extractor.drop_columns()
-# print(f"Remoção de colunas concluída em {time.time() - start_time:.2f} segundos")
+start_time = time.time()
+extractor.drop_columns()
+print(f"Remoção de colunas concluída em {time.time() - start_time:.2f} segundos")
 
 start_time = time.time()
 extractor.fill_na()
@@ -91,8 +153,12 @@ extractor.apply_comment_extraction()
 print(f"Extração de comentários concluída em {time.time() - start_time:.2f} segundos")
 
 start_time = time.time()
-extractor.use_all_drops_methods()
-print(f"Aplicação de métodos de remoção concluída em {time.time() - start_time:.2f} segundos")
+extractor.generate_target()
+print(f"Geração de TARGET concluída em {time.time() - start_time:.2f} segundos")
+
+# start_time = time.time()
+# extractor.use_all_drops_methods()
+# print(f"Aplicação de métodos de remoção concluída em {time.time() - start_time:.2f} segundos")
 
 start_time = time.time()
 extractor.show_data()

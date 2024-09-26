@@ -67,25 +67,9 @@ class Extractor_v2:
         self.drop_automatic_responses()
         self.drop_teams_messages()
 
-    def clean_description(self, description):
-        """Remove quebras de linha e espaços extras da descrição."""
-        return description.replace('\\n', '').strip()
-
-    def find_match_in_description(self, description, patterns):
-        """
-        Verifica a descrição contra uma lista de padrões regex.
-        Retorna o valor encontrado na primeira correspondência.
-        """
-        for pattern in patterns:
-            match = re.search(pattern, description)
-            if match:
-                # Aqui você pode customizar o que retornar dependendo do regex.
-                # Por exemplo, para o primeiro regex retorna o segundo grupo (nova fila).
-                if "Changed tíquete Fila" in pattern:
-                    return match.group(2)
-                else:
-                    return match.group(0)  # Ou ajuste conforme o padrão
-        return None
+    def filter_by_first_message(self):
+        # Filtrar apenas a primeira mensagem de cada ticket
+        self.data = self.data.groupby('HD_TICKET_ID').first().reset_index()
 
     def generate_target(self):
         # Ordenar os dados por 'HD_TICKET_ID' e 'TIMESTAMP'
@@ -113,21 +97,35 @@ class Extractor_v2:
                 if isinstance(row['DESCRIPTION'], str):
                     cleaned_description = self.clean_description(row['DESCRIPTION'])
 
-                    # Procurar correspondência nos regex
                     target_value = self.find_match_in_description(cleaned_description, regex_patterns)
 
-                    # Se encontramos uma correspondência, interrompemos o loop
                     if target_value:
                         break
 
-            # Se encontramos uma mudança, aplicar ao primeiro comentário do ticket
             if target_value:
                 first_index = ticket_data.index[0]
                 self.data.at[first_index, 'TARGET'] = target_value
             else:
-                # Se não encontramos, preencher com NaN
                 first_index = ticket_data.index[0]
                 self.data.at[first_index, 'TARGET'] = '1°Nível to SRI'
+
+    def clean_description(self, description):
+        """Remove quebras de linha e espaços extras da descrição."""
+        return description.replace('\\n', '').strip()
+
+    def find_match_in_description(self, description, patterns):
+        """
+        Verifica a descrição contra uma lista de padrões regex.
+        Retorna o valor encontrado na primeira correspondência.
+        """
+        for pattern in patterns:
+            match = re.search(pattern, description)
+            if match:
+                if "Changed tíquete Fila" in pattern or "Changed ticket Queue" in pattern:
+                    return match.group(2)
+                else:
+                    return match.group(0)
+        return None
 
 
 
@@ -140,25 +138,29 @@ start_time = time.time()
 extractor.order_by_HD_TICKET()
 print(f"Ordenação por HD_TICKET concluída em {time.time() - start_time:.2f} segundos")
 
-start_time = time.time()
-extractor.drop_columns()
-print(f"Remoção de colunas concluída em {time.time() - start_time:.2f} segundos")
+# start_time = time.time()
+# extractor.drop_columns()
+# print(f"Remoção de colunas concluída em {time.time() - start_time:.2f} segundos")
 
 start_time = time.time()
 extractor.fill_na()
 print(f"Preenchimento de valores NA concluído em {time.time() - start_time:.2f} segundos")
 
 start_time = time.time()
-extractor.apply_comment_extraction()
-print(f"Extração de comentários concluída em {time.time() - start_time:.2f} segundos")
-
-start_time = time.time()
 extractor.generate_target()
 print(f"Geração de TARGET concluída em {time.time() - start_time:.2f} segundos")
 
-# start_time = time.time()
-# extractor.use_all_drops_methods()
-# print(f"Aplicação de métodos de remoção concluída em {time.time() - start_time:.2f} segundos")
+start_time = time.time()
+extractor.filter_by_first_message()
+print(f"Filtragem por primeira mensagem concluída em {time.time() - start_time:.2f} segundos")
+
+start_time = time.time()
+extractor.use_all_drops_methods()
+print(f"Aplicação de métodos de remoção concluída em {time.time() - start_time:.2f} segundos")
+
+start_time = time.time()
+extractor.apply_comment_extraction()
+print(f"Extração de comentários concluída em {time.time() - start_time:.2f} segundos")
 
 start_time = time.time()
 extractor.show_data()

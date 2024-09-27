@@ -3,6 +3,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import time
 import re
+import json
 
 class Extractor_v2:
 
@@ -11,6 +12,16 @@ class Extractor_v2:
 
     def load_data(self, path):
         return pd.read_json(path)
+
+    def save_data(self, path):
+        self.data = self.data.fillna('')
+
+        # Converter objetos Timestamp para strings
+        self.data = self.data.applymap(lambda x: x.isoformat() if isinstance(x, pd.Timestamp) else x)
+
+        data_list = self.data.to_dict(orient='records')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data_list, f, ensure_ascii=False, indent=4)
 
     def order_by_HD_TICKET(self):
         self.data = self.data.sort_values(by=["HD_TICKET_ID", "TIMESTAMP"])
@@ -138,9 +149,9 @@ start_time = time.time()
 extractor.order_by_HD_TICKET()
 print(f"Ordenação por HD_TICKET concluída em {time.time() - start_time:.2f} segundos")
 
-# start_time = time.time()
-# extractor.drop_columns()
-# print(f"Remoção de colunas concluída em {time.time() - start_time:.2f} segundos")
+start_time = time.time()
+extractor.drop_columns()
+print(f"Remoção de colunas concluída em {time.time() - start_time:.2f} segundos")
 
 start_time = time.time()
 extractor.fill_na()
@@ -165,3 +176,8 @@ print(f"Extração de comentários concluída em {time.time() - start_time:.2f} 
 start_time = time.time()
 extractor.show_data()
 print(f"Exibição de dados concluída em {time.time() - start_time:.2f} segundos")
+
+# Salvando o arquivo JSON
+start_time = time.time()
+extractor.save_data("./filtered_data.json")
+print(f"Salvamento de dados concluído em {time.time() - start_time:.2f} segundos")

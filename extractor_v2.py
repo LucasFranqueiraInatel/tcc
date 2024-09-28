@@ -8,7 +8,10 @@ import json
 class Extractor_v2:
 
     def __init__(self, path):
-        self.data = self.load_data(path)
+        if isinstance(path, str): 
+            self.data = self.load_data(path)
+        elif isinstance(path, pd.DataFrame):  
+            self.data = path
 
     def load_data(self, path):
         return pd.read_json(path)
@@ -28,7 +31,7 @@ class Extractor_v2:
 
     def drop_columns(self):
         self.data = self.data.drop(
-            columns=['COMMENT_LOC', 'LOCALIZED_DESCRIPTION',
+            columns=['_id', 'COMMENT_LOC', 'LOCALIZED_DESCRIPTION',
                      'LOCALIZED_OWNERS_ONLY_DESCRIPTION', 'MAILED', 'MAILED_TIMESTAMP', 'MAILER_SESSION',
                      'NOTIFY_USERS', 'VIA_EMAIL', 'OWNERS_ONLY', 'RESOLUTION_CHANGED', 'SYSTEM_COMMENT',
                      'TICKET_DATA_CHANGE', 'VIA_SCHEDULED_PROCESS', 'VIA_IMPORT', 'VIA_BULK_UPDATE'])
@@ -137,47 +140,3 @@ class Extractor_v2:
                 else:
                     return match.group(0)
         return None
-
-
-
-# Passando o caminho do arquivo JSON no momento de criar o objeto
-start_time = time.time()
-extractor = Extractor_v2("./data.json")
-print(f"Carregamento de dados concluído em {time.time() - start_time:.2f} segundos")
-
-start_time = time.time()
-extractor.order_by_HD_TICKET()
-print(f"Ordenação por HD_TICKET concluída em {time.time() - start_time:.2f} segundos")
-
-start_time = time.time()
-extractor.drop_columns()
-print(f"Remoção de colunas concluída em {time.time() - start_time:.2f} segundos")
-
-start_time = time.time()
-extractor.fill_na()
-print(f"Preenchimento de valores NA concluído em {time.time() - start_time:.2f} segundos")
-
-start_time = time.time()
-extractor.generate_target()
-print(f"Geração de TARGET concluída em {time.time() - start_time:.2f} segundos")
-
-start_time = time.time()
-extractor.filter_by_first_message()
-print(f"Filtragem por primeira mensagem concluída em {time.time() - start_time:.2f} segundos")
-
-start_time = time.time()
-extractor.use_all_drops_methods()
-print(f"Aplicação de métodos de remoção concluída em {time.time() - start_time:.2f} segundos")
-
-start_time = time.time()
-extractor.apply_comment_extraction()
-print(f"Extração de comentários concluída em {time.time() - start_time:.2f} segundos")
-
-start_time = time.time()
-extractor.show_data()
-print(f"Exibição de dados concluída em {time.time() - start_time:.2f} segundos")
-
-# Salvando o arquivo JSON
-start_time = time.time()
-extractor.save_data("./filtered_data.json")
-print(f"Salvamento de dados concluído em {time.time() - start_time:.2f} segundos")

@@ -1,118 +1,145 @@
-import json
+import numpy as np
+import pandas as pd
 from bs4 import BeautifulSoup
+import time
+import re
+import json
 
+class Extractor_v2:
 
-class Extractor:
     def __init__(self, path):
-        self.path = path
-        self.original_data = self.load_data()
-        self.filtered_data = []
-        self.discarded_data = []
-        self.useds_ids = []
+        if isinstance(path, str): 
+            self.data = self.load_data(path)
+        elif isinstance(path, pd.DataFrame):  
+            self.data = path
 
-    def load_data(self):
-        # Carrega os dados do arquivo JSON
-        with open(self.path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+    def load_data(self, path):
+        return pd.read_json(path)
 
-    def extract_comment_text(self, comment_html):
-        # Extrai o texto do HTML de comentários
+    def save_data(self, path):
+        self.data = self.data.fillna('')
+
+        # Converter objetos Timestamp para strings
+        self.data = self.data.applymap(lambda x: x.isoformat() if isinstance(x, pd.Timestamp) else x)
+
+        data_list = self.data.to_dict(orient='records')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data_list, f, ensure_ascii=False, indent=4)
+
+    def order_by_HD_TICKET(self):
+        self.data = self.data.sort_values(by=["HD_TICKET_ID", "TIMESTAMP"])
+
+    def drop_columns(self):
+        self.data = self.data.drop(
+            columns=['_id', 'DESCRIPTION', 'OWNERS_ONLY_DESCRIPTION', 'COMMENT_LOC', 'LOCALIZED_DESCRIPTION',
+                     'LOCALIZED_OWNERS_ONLY_DESCRIPTION', 'MAILED', 'MAILED_TIMESTAMP', 'MAILER_SESSION',
+                     'NOTIFY_USERS', 'VIA_EMAIL', 'OWNERS_ONLY', 'RESOLUTION_CHANGED', 'SYSTEM_COMMENT',
+                     'TICKET_DATA_CHANGE', 'VIA_SCHEDULED_PROCESS', 'VIA_IMPORT', 'VIA_BULK_UPDATE'])
+
+    def fill_na(self):
+        self.data = self.data.fillna(np.nan)
+
+    @staticmethod
+    def extract_comment_text(comment_html):
         if comment_html is None:
             return ''
+        if isinstance(comment_html, str) and (comment_html.strip().startswith('<') or comment_html.strip().startswith('&lt;')):
+            # Verifica se parece ser HTML
+            try:
+                soup = BeautifulSoup(comment_html, 'html.parser')
+                return soup.get_text()
+            except Exception as e:
+                return f"Erro ao extrair texto de COMMENT: {e}"
+        else:
+            # Caso contrário, retorna o texto bruto
+            return comment_html
 
-        try:
-            soup = BeautifulSoup(comment_html, 'html.parser')
-            return soup.get_text()
-        except Exception as e:
-            return f"Erro ao extrair texto de COMMENT: {e}"
-        
-    def isnt_first_message(self, id):
-        # Verifica se o comentário é o primeiro da conversa
-        try:
-            if id in self.useds_ids:
-                return True
+    def show_data(self):
+        print(self.data)
+
+    def apply_comment_extraction(self):
+        self.data['COMMENT'] = self.data['COMMENT'].apply(self.extract_comment_text)
+
+    def drop_empty_comments(self):
+        self.data = self.data[self.data['COMMENT'] != ''].dropna()
+
+    def drop_automatic_responses(self):
+        automatic_responses = ['Caso esta solicitação deva ser atendida de forma prioritária, favor ligar no ramal 324',
+                               'Esta é uma resposta automática do sistema de ServiceDesk',
+                               'Este chamado foi encerrado automaticamente',
+                               'Sua solicitação será avaliada pela equipe responsável. Em breve você receberá um retorno']
+
+        self.data = self.data[~self.data['COMMENT'].str.contains('|'.join(automatic_responses))].dropna()
+
+    def drop_teams_messages(self):
+        # Prevenindo o erro ao substituir NaN por string vazia
+        self.data = self.data[~self.data['COMMENT'].str.contains('Você foi adicionado nas seguintes turmas')].dropna()
+
+    def use_all_drops_methods(self):
+        self.data['COMMENT'] = self.data['COMMENT'].fillna('')
+        # self.drop_empty_comments()
+        self.drop_automatic_responses()
+        self.drop_teams_messages()
+
+    def filter_by_first_message(self):
+        # Filtrar apenas a primeira mensagem de cada ticket
+        self.data = self.data.groupby('HD_TICKET_ID').first().reset_index()
+
+    def remove_befora_data(self, data):
+        self.data = self.data[self.data['TIMESTAMP'] > data]
+
+    def generate_target(self):
+        # Ordenar os dados por 'HD_TICKET_ID' e 'TIMESTAMP'
+        self.order_by_HD_TICKET()
+
+        # Capturar tickets únicos
+        unique_tickets = self.data['HD_TICKET_ID'].unique()
+
+        # Lista de regex que deseja verificar
+        regex_patterns = [
+            'Changed tíquete Fila from (.+?) to (.+?)\.',
+            'Changed ticket Queue from (.+?) to (.+?)\.',
+        ]
+
+        # Iterar sobre cada ticket
+        for ticket_id in unique_tickets:
+            # Filtrar as linhas correspondentes ao ticket atual
+            ticket_data = self.data[self.data['HD_TICKET_ID'] == ticket_id]
+
+            # Variável para armazenar o resultado encontrado
+            target_value = None
+
+            # Procurar uma correspondência em cada descrição do ticket
+            for index, row in ticket_data.iterrows():
+                if isinstance(row['DESCRIPTION'], str):
+                    cleaned_description = self.clean_description(row['DESCRIPTION'])
+
+                    target_value = self.find_match_in_description(cleaned_description, regex_patterns)
+
+                    if target_value:
+                        break
+
+            if target_value:
+                first_index = ticket_data.index[0]
+                self.data.at[first_index, 'TARGET'] = target_value
             else:
-                self.useds_ids.append(id)
-                return False
-        except Exception as e:
-            return f"Erro ao verificar se COMMENT é o primeiro da conversa: {e}"
+                first_index = ticket_data.index[0]
+                self.data.at[first_index, 'TARGET'] = 'SUPORTE - 1°Nível'
 
-    def is_comment_empty(self, comment_html):
-        # Verifica se o comentário está vazio
-        if comment_html is None:
-            return True 
+    def clean_description(self, description):
+        """Remove quebras de linha e espaços extras da descrição."""
+        return description.replace('\\n', '').strip()
 
-        try:
-            soup = BeautifulSoup(comment_html, 'html.parser')
-            comment_text = soup.get_text()
-            if comment_text.strip() == '' or comment_text.strip() == '\n' or comment_text.strip() == '\n\n':
-                return True
-            return False
-        except Exception as e:
-            return f"Erro ao verificar se COMMENT está vazio: {e}"
-
-    def is_teams_message(self, comment_html):
-        # Verifica se o comentário é uma mensagem do Teams
-        try:
-            soup = BeautifulSoup(comment_html, 'html.parser')
-            comment_text = soup.get_text()
-            if 'Você foi adicionado nas seguintes turmas' in comment_text:
-                return True
-            return False
-        except Exception as e:
-            return f"Erro ao verificar se COMMENT é uma mensagem do Teams: {e}"
-
-    def is_automatic_serviceDesk_response(self, comment_html):
-        # Verifica se o comentário contém o texto da resposta automática
-        try:
-            soup = BeautifulSoup(comment_html, 'html.parser')
-            comment_text = soup.get_text()
-            if 'Caso esta solicitação deva ser atendida de forma prioritária, favor ligar no ramal 324' in comment_text or 'Esta é uma resposta automática do sistema de ServiceDesk' in comment_text or 'Este chamado foi encerrado automaticamente' in comment_text or 'Sua solicitação será avaliada pela equipe responsável. Em breve você receberá um retorno' in comment_text:
-                return True
-            return False
-        except Exception as e:
-            return f"Erro ao verificar automatic_serviceDesk_response: {e}"
-
-    def extract_data(self):
-        keys_to_remove = ['COMMENT_LOC', 'DESCRIPTION', 'OWNERS_ONLY_DESCRIPTION', 'LOCALIZED_DESCRIPTION', 'LOCALIZED_OWNERS_ONLY_DESCRIPTION', 'MAILED', 'MAILED_TIMESTAMP', 'MAILER_SESSION', 'NOTIFY_USERS', 'VIA_EMAIL', 'OWNERS_ONLY', 'RESOLUTION_CHANGED', 'SYSTEM_COMMENT', 'TICKET_DATA_CHANGE', 'VIA_SCHEDULED_PROCESS', 'VIA_IMPORT', 'VIA_BULK_UPDATE']
-
-        for item in self.original_data:
-            if isinstance(item, dict):
-                if 'COMMENT' in item and 'HD_TICKET_ID' in item:
-                    comment_html = item['COMMENT']
-                    
-                    # Limpa o HTML do COMMENT
-                    clean_comment = self.extract_comment_text(comment_html)
-                    item['COMMENT'] = clean_comment
-
-                    if self.is_comment_empty(clean_comment) or self.is_automatic_serviceDesk_response(clean_comment) or self.is_teams_message(clean_comment) or self.isnt_first_message(item['HD_TICKET_ID']):
-                        self.discarded_data.append(item)
-                    else:
-                        for key in keys_to_remove:
-                            item.pop(key, None)
-                        self.filtered_data.append(item)
+    def find_match_in_description(self, description, patterns):
+        """
+        Verifica a descrição contra uma lista de padrões regex.
+        Retorna o valor encontrado na primeira correspondência.
+        """
+        for pattern in patterns:
+            match = re.search(pattern, description)
+            if match:
+                if "Changed tíquete Fila" in pattern or "Changed ticket Queue" in pattern:
+                    return match.group(2)
                 else:
-                    self.filtered_data.append(item)
-            else:
-                print("Item não é um dicionário.")
-            print(f"Item {item['ID']}: processado.")
-
-    def save_filtered_data(self, output_path):
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(self.filtered_data, f, ensure_ascii=False, indent=4)
-
-    def save_discarded_data(self, discarded_output_path):
-        with open(discarded_output_path, 'w', encoding='utf-8') as f:
-            json.dump(self.discarded_data, f, ensure_ascii=False, indent=4)
-
-
-# Exemplo de uso
-teste = Extractor('data.json')
-teste.extract_data()
-
-teste.save_filtered_data('filtered_data.json')
-teste.save_discarded_data('discarded_data.json')
-
-print(f"Total de dados originais: {len(teste.original_data)}")
-print(f"Total de dados filtrados: {len(teste.filtered_data)}")
-print(f"Total de dados descartados: {len(teste.discarded_data)}")
+                    return match.group(0)
+        return None

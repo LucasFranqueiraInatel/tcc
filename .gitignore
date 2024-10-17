@@ -162,8 +162,8 @@ cython_debug/
 #.idea/
 
 
-discarded_data.json
-filtered_data.json
-data.json
+data/discarded_data.json
+data/filtered_data.json
+data/data.json
 tccData.csv
 arquivo_convertido.xlsx

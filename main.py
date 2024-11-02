@@ -44,5 +44,9 @@ extractor.show_data()
 print(f"Exibição de dados concluída em {time.time() - start_time:.2f} segundos")
 
 start_time = time.time()
+extractor.clean_text_column('TARGET')
+print(f"Remoção de tabs e espacos concluída em {time.time() - start_time:.2f} segundos")
+
+start_time = time.time()
 extractor.save_data("data/filtered_data.json")
 print(f"Salvamento de dados concluído em {time.time() - start_time:.2f} segundos")

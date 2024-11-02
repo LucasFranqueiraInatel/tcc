@@ -143,3 +143,15 @@ class Extractor_v2:
                 else:
                     return match.group(0)
         return None
+
+    def clean_text_column(self, column_name):
+        # Replace newlines and tabs with a space
+        self.data[column_name] = self.data[column_name].str.replace('\n', ' ', regex=True)
+        self.data[column_name] = self.data[column_name].str.replace('\t', ' ', regex=True)
+        self.data[column_name] = self.data[column_name].str.replace('&nbsp;', ' ', regex=True)
+    
+        # Optionally, remove extra spaces that may result from the replacements
+        self.data[column_name] = self.data[column_name].str.replace(' +', ' ', regex=True).str.strip()
+    
+    def return_data(self):
+        return self.data

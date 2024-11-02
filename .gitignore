@@ -161,9 +161,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-
-data/discarded_data.json
-data/filtered_data.json
-data/data.json
 tccData.csv
 arquivo_convertido.xlsx
+*.json

@@ -31,7 +31,7 @@ class Extractor_v2:
 
     def drop_columns(self):
         self.data = self.data.drop(
-            columns=['_id', 'DESCRIPTION', 'OWNERS_ONLY_DESCRIPTION', 'COMMENT_LOC', 'LOCALIZED_DESCRIPTION',
+            columns=['OWNERS_ONLY_DESCRIPTION', 'COMMENT_LOC', 'LOCALIZED_DESCRIPTION',
                      'LOCALIZED_OWNERS_ONLY_DESCRIPTION', 'MAILED', 'MAILED_TIMESTAMP', 'MAILER_SESSION',
                      'NOTIFY_USERS', 'VIA_EMAIL', 'OWNERS_ONLY', 'RESOLUTION_CHANGED', 'SYSTEM_COMMENT',
                      'TICKET_DATA_CHANGE', 'VIA_SCHEDULED_PROCESS', 'VIA_IMPORT', 'VIA_BULK_UPDATE'])
@@ -60,8 +60,8 @@ class Extractor_v2:
     def apply_comment_extraction(self):
         self.data['COMMENT'] = self.data['COMMENT'].apply(self.extract_comment_text)
 
-    def drop_empty_comments(self):
-        self.data = self.data[self.data['COMMENT'] != ''].dropna()
+    def drop_useless_message(self):
+        self.data = self.data[~((self.data['COMMENT'] == '') & (self.data['DESCRIPTION'] == ''))].dropna()
 
     def drop_automatic_responses(self):
         automatic_responses = ['Caso esta solicitação deva ser atendida de forma prioritária, favor ligar no ramal 324',
@@ -75,20 +75,57 @@ class Extractor_v2:
         # Prevenindo o erro ao substituir NaN por string vazia
         self.data = self.data[~self.data['COMMENT'].str.contains('Você foi adicionado nas seguintes turmas')].dropna()
 
+    def drop_deleted_comments(self):
+        # Define o padrão regex para identificar as mensagens de usuário ou dispositivo excluídos
+        pattern = r'User ".*?" was deleted|Device ".*?" was deleted'
+
+        # Filtra o DataFrame para manter apenas as linhas que não correspondem ao padrão
+        self.data = self.data[~self.data['COMMENT'].str.contains(pattern, na=False, regex=True)]
+
+    def drop_comments_with_no_text(self):
+        self.data = self.data[self.data['COMMENT'].str.strip() != '']
+
     def use_all_drops_methods(self):
         self.data['COMMENT'] = self.data['COMMENT'].fillna('')
-        # self.drop_empty_comments()
         self.drop_automatic_responses()
         self.drop_teams_messages()
+        self.drop_useless_message()
+        self.drop_deleted_comments()
+        self.drop_comments_with_no_text()
 
     def filter_by_first_message(self):
         # Filtrar apenas a primeira mensagem de cada ticket
         self.data = self.data.groupby('HD_TICKET_ID').first().reset_index()
 
-    def remove_befora_data(self, data):
-        self.data = self.data[self.data['TIMESTAMP'] > data]
+    def remove_befora_data(self, date):
+        self.data = self.data[self.data['TIMESTAMP'] > date]
 
     def generate_target(self):
+
+        mapping = {
+            'SUPORTE - 1°Nível': 'Suporte 1° Nível',
+            'Suporte-1°Nível': 'Suporte 1° Nível',
+            'SSA - 2° Nível': 'SSA',
+            'SRI - 2°Nível': 'SRI',
+            'Suporte ICC-2° Nível': 'ICC',
+            'Suporte Geral-2° Nível': 'Suporte 2° Nível',
+            'ADM': 'ADM',
+            'Suporte Geral - 2°Nível - HUAWEI': 'CIDC',
+            'Suporte Geral - 2°Nível - CIDC': 'CIDC',
+            'Segurança': 'SSI',
+            'SSI - 2°Nível': 'SSI',
+            'Empréstimo ': 'Empréstimo',
+            'SUPORTE - 2°Nível': 'Suporte 2° Nível',
+            'SUP - 2°Nível': 'Suporte 2° Nível',
+            'ICC - 2°Nível': 'ICC',
+            'CIDC - 2°Nivel': 'CIDC',
+            'SSA - 2°Nível': 'SSA',
+            'SUPORTE CIDC - 2°Nivel': 'CIDC',
+            'SUPORTE ICC - 2°Nível': 'ICC',
+            'Pendências': 'Pendências',
+            'Projetos da SRI': 'SRI'
+        }
+
         # Ordenar os dados por 'HD_TICKET_ID' e 'TIMESTAMP'
         self.order_by_HD_TICKET()
 
@@ -98,7 +135,7 @@ class Extractor_v2:
         # Lista de regex que deseja verificar
         regex_patterns = [
             'Changed tíquete Fila from (.+?) to (.+?)\.',
-            'Changed ticket Queue from (.+?) to (.+?)\.',
+            'Changed ticket Queue from (.+?) to (.+?)\.'
         ]
 
         # Iterar sobre cada ticket
@@ -106,8 +143,8 @@ class Extractor_v2:
             # Filtrar as linhas correspondentes ao ticket atual
             ticket_data = self.data[self.data['HD_TICKET_ID'] == ticket_id]
 
-            # Variável para armazenar o resultado encontrado
-            target_value = None
+            # Variável para armazenar a última classificação encontrada
+            last_target_value = 'Suporte 1° Nível'
 
             # Procurar uma correspondência em cada descrição do ticket
             for index, row in ticket_data.iterrows():
@@ -115,16 +152,22 @@ class Extractor_v2:
                     cleaned_description = self.clean_description(row['DESCRIPTION'])
 
                     target_value = self.find_match_in_description(cleaned_description, regex_patterns)
-
                     if target_value:
-                        break
+                        target_value = mapping.get(target_value, target_value)
 
-            if target_value:
-                first_index = ticket_data.index[0]
-                self.data.at[first_index, 'TARGET'] = target_value
-            else:
-                first_index = ticket_data.index[0]
-                self.data.at[first_index, 'TARGET'] = 'SUPORTE - 1°Nível'
+                        # Atualizar todas as mensagens anteriores para o novo target
+                        self.data.loc[ticket_data.index[:index + 1], 'TARGET'] = target_value
+                        last_target_value = target_value
+                    else:
+                        # Caso não haja um novo target, aplicar a última classificação encontrada
+                        self.data.at[index, 'TARGET'] = last_target_value
+
+            # Atualizar as mensagens seguintes ao loop para o último target encontrado
+            if last_target_value:
+                self.data.loc[ticket_data.index[-1]:, 'TARGET'] = last_target_value
+
+        # Remover linhas com targets indesejados
+        self.data = self.data[~self.data['TARGET'].isin(['Pendências', 'Empréstimo'])]
 
     def clean_description(self, description):
         """Remove quebras de linha e espaços extras da descrição."""

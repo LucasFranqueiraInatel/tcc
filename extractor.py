@@ -101,7 +101,6 @@ class Extractor_v2:
         self.data = self.data[self.data['TIMESTAMP'] > date]
 
     def generate_target(self):
-
         mapping = {
             'SUPORTE - 1°Nível': 'Suporte 1° Nível',
             'Suporte-1°Nível': 'Suporte 1° Nível',
@@ -121,7 +120,7 @@ class Extractor_v2:
             'CIDC - 2°Nivel': 'CIDC',
             'SSA - 2°Nível': 'SSA',
             'SUPORTE CIDC - 2°Nivel': 'CIDC',
-            'SUPORTE ICC - 2°Nível': 'ICC',
+            'SUPORTE ICC - 2° Nível': 'ICC',
             'Pendências': 'Pendências',
             'Projetos da SRI': 'SRI'
         }
@@ -134,8 +133,8 @@ class Extractor_v2:
 
         # Lista de regex que deseja verificar
         regex_patterns = [
-            'Changed tíquete Fila from (.+?) to (.+?)\.',
-            'Changed ticket Queue from (.+?) to (.+?)\.'
+            r'Changed tíquete Fila from (.+?) to (.+?)\.',
+            r'Changed ticket Queue from (.+?) to (.+?)\.'
         ]
 
         # Iterar sobre cada ticket
@@ -143,28 +142,37 @@ class Extractor_v2:
             # Filtrar as linhas correspondentes ao ticket atual
             ticket_data = self.data[self.data['HD_TICKET_ID'] == ticket_id]
 
-            # Variável para armazenar a última classificação encontrada
-            last_target_value = 'Suporte 1° Nível'
+            # Flag para detectar se houve mudança de fila
+            has_queue_change = False
 
-            # Procurar uma correspondência em cada descrição do ticket
+            # Verificar se há mudanças de fila ao longo do ticket
+            for _, row in ticket_data.iterrows():
+                if isinstance(row['DESCRIPTION'], str):
+                    cleaned_description = self.clean_description(row['DESCRIPTION'])
+                    if self.find_match_in_description(cleaned_description, regex_patterns):
+                        has_queue_change = True
+                        break
+
+            # Somente definir "Suporte 1° Nível" se nenhuma mudança de fila foi encontrada
+            if not has_queue_change:
+                # Aplicar "Suporte 1° Nível" para todas as mensagens se não houve nenhuma mudança
+                self.data.loc[ticket_data.index, 'TARGET'] = 'Suporte 1° Nível'
+                continue  # Ir para o próximo ticket
+
+            # Segunda passagem: aplicar targets com base nas mudanças detectadas
+            current_target = None
             for index, row in ticket_data.iterrows():
                 if isinstance(row['DESCRIPTION'], str):
                     cleaned_description = self.clean_description(row['DESCRIPTION'])
+                    new_target = self.find_match_in_description(cleaned_description, regex_patterns)
 
-                    target_value = self.find_match_in_description(cleaned_description, regex_patterns)
-                    if target_value:
-                        target_value = mapping.get(target_value, target_value)
+                    if new_target:
+                        new_target = mapping.get(new_target, new_target)
+                        current_target = new_target
 
-                        # Atualizar todas as mensagens anteriores para o novo target
-                        self.data.loc[ticket_data.index[:index + 1], 'TARGET'] = target_value
-                        last_target_value = target_value
-                    else:
-                        # Caso não haja um novo target, aplicar a última classificação encontrada
-                        self.data.at[index, 'TARGET'] = last_target_value
-
-            # Atualizar as mensagens seguintes ao loop para o último target encontrado
-            if last_target_value:
-                self.data.loc[ticket_data.index[-1]:, 'TARGET'] = last_target_value
+                    # Aplicar o target atual à linha atual, se encontrado
+                    if current_target:
+                        self.data.at[index, 'TARGET'] = current_target
 
         # Remover linhas com targets indesejados
         self.data = self.data[~self.data['TARGET'].isin(['Pendências', 'Empréstimo'])]

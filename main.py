@@ -3,7 +3,7 @@ from db.mongo_connect import Database
 import time
 
 start_time = time.time()
-extractor = Extractor_v2(Database().return_data())
+extractor = Extractor_v2('./data/data.json')
 # extractor = Extractor_v2('data/data.json')
 print(f"Carregamento de dados concluído em {time.time() - start_time:.2f} segundos")
 print('Quantidade de registros:', len(extractor.data))
@@ -45,7 +45,7 @@ extractor.show_data()
 print(f"Exibição de dados concluída em {time.time() - start_time:.2f} segundos")
 
 start_time = time.time()
-extractor.clean_text_column('TARGET')
+extractor.clean_text_column('COMMENT')
 print(f"Remoção de tabs e espacos concluída em {time.time() - start_time:.2f} segundos")
 
 start_time = time.time()

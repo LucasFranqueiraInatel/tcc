@@ -5,12 +5,13 @@ import time
 import re
 import json
 
+
 class Extractor_v2:
 
     def __init__(self, path):
-        if isinstance(path, str): 
+        if isinstance(path, str):
             self.data = self.load_data(path)
-        elif isinstance(path, pd.DataFrame):  
+        elif isinstance(path, pd.DataFrame):
             self.data = path
 
     def load_data(self, path):
@@ -43,7 +44,8 @@ class Extractor_v2:
     def extract_comment_text(comment_html):
         if comment_html is None:
             return ''
-        if isinstance(comment_html, str) and (comment_html.strip().startswith('<') or comment_html.strip().startswith('&lt;')):
+        if isinstance(comment_html, str) and (
+                comment_html.strip().startswith('<') or comment_html.strip().startswith('&lt;')):
             # Verifica se parece ser HTML
             try:
                 soup = BeautifulSoup(comment_html, 'html.parser')
@@ -202,9 +204,9 @@ class Extractor_v2:
         self.data[column_name] = self.data[column_name].str.replace('&nbsp;', ' ', regex=True)
         self.data[column_name] = self.data[column_name].str.replace('\n;', ' ', regex=True)
         self.data[column_name] = self.data[column_name].str.replace('\r', ' ', regex=True)
-    
+
         # Optionally, remove extra spaces that may result from the replacements
         self.data[column_name] = self.data[column_name].str.replace(' +', ' ', regex=True).str.strip()
-    
+
     def return_data(self):
         return self.data

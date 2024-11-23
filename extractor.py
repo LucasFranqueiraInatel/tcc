@@ -17,6 +17,9 @@ class Extractor_v2:
     def load_data(self, path):
         return pd.read_json(path)
 
+    def show_data(self):
+        print(self.data)
+
     def save_data(self, path):
         self.data = self.data.fillna('')
 
@@ -42,6 +45,10 @@ class Extractor_v2:
 
     @staticmethod
     def extract_comment_text(comment_html):
+        """
+        Extrai o texto puro de um conteúdo HTML usando BeautifulSoup,
+        se necessário. Caso contrário, retorna o texto bruto.
+        """
         if comment_html is None:
             return ''
         if isinstance(comment_html, str) and (
@@ -56,11 +63,46 @@ class Extractor_v2:
             # Caso contrário, retorna o texto bruto
             return comment_html
 
-    def show_data(self):
-        print(self.data)
+    @staticmethod
+    def removing_useless_text(comment):
+        """
+        Remove padrões indesejados do texto, como avisos ou formatos irrelevantes.
+        """
+        if comment is None:
+            return ''
+
+        # Lista de padrões indesejados para remover
+        patterns = [
+            r'ATENÇÃO: Este email veio de um remetente externo. Não siga instruções, clique em links ou abra anexos a não ser que você reconheça o remetente e saiba que o conteúdo é seguro. ',
+            r'Some people who received this message.*?Learn why this is important',
+            r'[-]{2,}',
+            r'[#]{2,}',
+            r'\s{2,}',
+            r'<table[^>]*>',
+            r'</table>',
+            r'<tbody[^>]*>',
+            r'</tbody>',
+            r'<tr[^>]*>',
+            r'</tr>',
+            r'<td[^>]*>',
+            r'</td>',
+        ]
+
+        if isinstance(comment, str):
+            for pattern in patterns:
+                comment = re.sub(pattern, '', comment, flags=re.IGNORECASE)
+
+        return comment.strip()
 
     def apply_comment_extraction(self):
-        self.data['COMMENT'] = self.data['COMMENT'].apply(self.extract_comment_text)
+        """
+        Aplica a extração de texto de HTML e remove padrões inúteis em série.
+        """
+        self.data['COMMENT'] = (
+            self.data['COMMENT']
+            .apply(self.extract_comment_text)
+            .apply(self.removing_useless_text)
+        )
 
     def drop_useless_message(self):
         self.data = self.data[~((self.data['COMMENT'] == '') & (self.data['DESCRIPTION'] == ''))].dropna()
@@ -69,7 +111,8 @@ class Extractor_v2:
         automatic_responses = ['Caso esta solicitação deva ser atendida de forma prioritária, favor ligar no ramal 324',
                                'Esta é uma resposta automática do sistema de ServiceDesk',
                                'Este chamado foi encerrado automaticamente',
-                               'Sua solicitação será avaliada pela equipe responsável. Em breve você receberá um retorno']
+                               'Sua solicitação será avaliada pela equipe responsável. Em breve você receberá um retorno',
+                               'Review These Messages1 messages are being held for you to review as of']
 
         self.data = self.data[~self.data['COMMENT'].str.contains('|'.join(automatic_responses))].dropna()
 
@@ -204,6 +247,8 @@ class Extractor_v2:
         self.data[column_name] = self.data[column_name].str.replace('&nbsp;', ' ', regex=True)
         self.data[column_name] = self.data[column_name].str.replace('\n;', ' ', regex=True)
         self.data[column_name] = self.data[column_name].str.replace('\r', ' ', regex=True)
+        self.data[column_name] = self.data[column_name].str.replace(' ', ' ', regex=True)
+        self.data[column_name] = self.data[column_name].str.replace('<br />', ' ', regex=True)
 
         # Optionally, remove extra spaces that may result from the replacements
         self.data[column_name] = self.data[column_name].str.replace(' +', ' ', regex=True).str.strip()

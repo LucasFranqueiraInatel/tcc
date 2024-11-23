@@ -4,12 +4,14 @@ from sklearn.metrics import accuracy_score, classification_report
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
 import pandas as pd
+import os
+import pickle
 
 # Carregando os dados
 df = pd.read_json('./data/filtered_data.json')
 
 # Ajustando a coluna TARGET para classes originais
-# df['TARGET'] = df['TARGET'].apply(lambda x: 'SSI' if x == 'SSI' else 'não SSI')
+df['TARGET'] = df['TARGET'].apply(lambda x: 'SSI' if x == 'SSI' else 'não SSI')
 
 # Verificando as classes únicas
 print("Classes únicas no TARGET:", df['TARGET'].unique())
@@ -39,4 +41,14 @@ y_pred_labels = le.inverse_transform(y_pred)
 # Avaliação
 print("Acurácia:", accuracy_score(y_test_labels, y_pred_labels))
 print("Relatório de Classificação:\n", classification_report(y_test_labels, y_pred_labels))
+
+# pasta_modelos = "xgboostClassCascade"
+# modelo_nome = "xgboostClass_SSI.pkl"
+
+# # Criar o caminho completo do arquivo
+# caminho_modelo = os.path.join(pasta_modelos, modelo_nome)
+
+# nome_arquivo = os.path.join('./xgboostClassCascade', f"xgboostClass_SSI.pkl")
+# with open(caminho_modelo, "wb") as f:
+#     pickle.dump(model, f)
 

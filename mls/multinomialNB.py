@@ -7,22 +7,22 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import accuracy_score, classification_report
 
 # Carregar o arquivo JSON
-data = pd.read_json('../data/filtered_data.json')
+data = pd.read_json('./data/filtered_data.json')
 df = pd.DataFrame(data)
 
-# Carregar o modelo do spaCy para português
-nlp = spacy.load('pt_core_news_sm')
+# # Carregar o modelo do spaCy para português
+# nlp = spacy.load('pt_core_news_sm')
 
-# Função para limpar texto
-def limpar_texto(texto):
-    texto = re.sub(r"http\S+|www\S+|mailto\S+|[\[\](){}:;.,]", '', texto)  # Remove URLs e caracteres especiais
-    texto = texto.lower()  # Converte para minúsculas
-    doc = nlp(texto)  # Processa o texto com spaCy
-    tokens = [token.lemma_ for token in doc if not token.is_stop]  # Lematiza e remove stopwords
-    return ' '.join(tokens)
+# # Função para limpar texto
+# def limpar_texto(texto):
+#     texto = re.sub(r"http\S+|www\S+|mailto\S+|[\[\](){}:;.,]", '', texto)  # Remove URLs e caracteres especiais
+#     texto = texto.lower()  # Converte para minúsculas
+#     doc = nlp(texto)  # Processa o texto com spaCy
+#     tokens = [token.lemma_ for token in doc if not token.is_stop]  # Lematiza e remove stopwords
+#     return ' '.join(tokens)
 
-# Aplicar a função de limpeza ao campo 'COMMENT'
-df['COMMENT'] = df['COMMENT'].apply(limpar_texto)
+# # Aplicar a função de limpeza ao campo 'COMMENT'
+# df['COMMENT'] = df['COMMENT'].apply(limpar_texto)
 
 # Vetorização e modelo
 vectorizer = TfidfVectorizer(max_features=3000)
